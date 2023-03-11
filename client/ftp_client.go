@@ -18,13 +18,17 @@ import (
 )
 
 const (
+	SERVER_HOST = "localhost"
+	SERVER_PORT = "8000"
 	SERVER_TYPE = "tcp"
 )
 
 func main() {
 	var (
-		command string
-		pattern = `^CONNECT ([a-zA-Z0-9\-\.]+:[0-9]+)$`
+		command      string
+		dataCommands = []string{"LIST", "RETR", "STOR"}
+		pattern      = `^CONNECT ([a-zA-Z0-9\-\.]+:[0-9]+)$`
+		buffer       = make([]byte, 1024)
 	)
 
 	//establish connection
@@ -48,45 +52,54 @@ func main() {
 				continue
 			}
 
-			///send some data
+			// Interact with the server via commands
 			for {
+				scanner := bufio.NewScanner(os.Stdin)
 				fmt.Println("Enter a command:")
+
 				if scanner.Scan() {
 					command = scanner.Text()
 				}
 
-				//TODO: Do some preprocessing to separate the command type from potential command args
-				//TODO: Make create an array of all valid command types
+				// If client expects data, open the data port
+				if isDataCommand(dataCommands, command) {
+					fmt.Println("Data Port Running on " + SERVER_HOST + ":" + SERVER_PORT)
+					server, err := net.Listen(SERVER_TYPE, SERVER_HOST+":"+SERVER_PORT)
 
-				//Data Connection - established and torn down after each command
-				data, err := establishConnection("Data", host, port)
-				if err != nil {
-					continue
-				}
-
-				if command != "QUIT" {
+					if err != nil {
+						fmt.Println("Error listening:", err.Error())
+						os.Exit(1)
+					}
 					_, _ = control.Write([]byte(command))
-					buffer := make([]byte, 1024)
-					mLen, err := control.Read(buffer)
+
+					connection, err := server.Accept()
+					if err != nil {
+						fmt.Println("Error accepting: ", err.Error())
+						os.Exit(1)
+					}
+
+					dataLength, err := connection.Read(buffer)
 					if err != nil {
 						fmt.Println("Error reading:", err.Error())
+						return
 					}
-					fmt.Println("Received: ", string(buffer[:mLen]))
-					defer func(data net.Conn) {
-						err := data.Close()
-						if err != nil {
-							fmt.Println(err)
-						}
-					}(data)
-				} else {
-					fmt.Println(fmt.Sprintf("Ending connection with %s:%s", host, port))
-					defer data.Close()
+					dataToString := string(buffer[:dataLength])
+					fmt.Println(dataToString)
+
+					fmt.Println("Data Port Closing")
+					connection.Close()
+					server.Close()
+				} else if command == "QUIT" {
+					control.Write([]byte("QUIT"))
 					break
+				} else {
+					fmt.Println("Invalid command. Try again")
 				}
-
 			}
-			defer control.Close()
-
+			err = control.Close()
+			if err != nil {
+				return
+			}
 		} else if command == "QUIT" {
 			break
 		} else {
@@ -94,7 +107,6 @@ func main() {
 				"a server")
 		}
 	}
-
 }
 
 func establishConnection(connectionType, host, port string) (net.Conn, error) {
@@ -106,4 +118,13 @@ func establishConnection(connectionType, host, port string) (net.Conn, error) {
 	}
 
 	return connection, err
+}
+
+func isDataCommand(commands []string, command string) bool {
+	for _, value := range commands {
+		if value == command {
+			return true
+		}
+	}
+	return false
 }

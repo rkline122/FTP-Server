@@ -28,13 +28,14 @@ func main() {
 	defer server.Close()
 	fmt.Println("Listening on " + SERVER_HOST + ":" + SERVER_PORT)
 	fmt.Println("Waiting for client...")
+
 	for {
 		connection, err := server.Accept()
 		if err != nil {
 			fmt.Println("Error accepting: ", err.Error())
 			os.Exit(1)
 		}
-		fmt.Println("client connected")
+		fmt.Println("Client connected")
 		go processClient(connection)
 	}
 }
@@ -42,22 +43,59 @@ func main() {
 func processClient(connection net.Conn) {
 
 	var (
-		buffer = make([]byte, 1024)
+		buffer       = make([]byte, 1024)
+		dataCommands = []string{"LIST", "RETR", "STOR"}
 	)
 
-	// Reads and deconstructs client message
-	messageLen, err := connection.Read(buffer)
-	if err != nil {
-		fmt.Println("Error reading:", err.Error())
-		return
-	}
-	bufferToString := string(buffer[:messageLen])
+	for {
+		// Reads and deconstructs client message
+		messageLen, err := connection.Read(buffer)
+		if err != nil {
+			fmt.Println("Error reading:", err.Error())
+			return
+		}
+		command := string(buffer[:messageLen])
 
-	fmt.Println(bufferToString)
-
-	connection.Write([]byte("Message Received."))
-	err = connection.Close()
-	if err != nil {
-		return
+		if isDataCommand(dataCommands, command) {
+			var data net.Conn
+			for {
+				data, err = establishConnection("Data", SERVER_HOST, "8000")
+				if err == nil {
+					break
+				} else {
+					continue
+				}
+			}
+			data.Write([]byte(fmt.Sprintf("<insert %s data here>", command)))
+			data.Close()
+		} else if command == "QUIT" {
+			err = connection.Close()
+			if err != nil {
+				return
+			}
+			fmt.Println("Connection Ended by Client.")
+			break
+		}
 	}
+
+}
+
+func establishConnection(connectionType, host string, port string) (net.Conn, error) {
+	connection, err := net.Dial(SERVER_TYPE, host+":"+port)
+	if err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(fmt.Sprintf("[%s] Connected to %s:%s", connectionType, host, port))
+	}
+
+	return connection, err
+}
+
+func isDataCommand(commands []string, command string) bool {
+	for _, value := range commands {
+		if value == command {
+			return true
+		}
+	}
+	return false
 }
