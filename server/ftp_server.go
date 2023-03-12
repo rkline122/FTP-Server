@@ -2,8 +2,11 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
+	"regexp"
+	"strings"
 )
 
 const (
@@ -51,8 +54,7 @@ func main() {
 func processClient(connection net.Conn) {
 
 	var (
-		buffer       = make([]byte, 1024)
-		dataCommands = []string{"LIST", "RETR", "STOR"}
+		buffer = make([]byte, 1024)
 	)
 
 	for {
@@ -64,21 +66,24 @@ func processClient(connection net.Conn) {
 		}
 		command := string(buffer[:messageLen])
 
-		if isDataCommand(dataCommands, command) {
-			var data net.Conn
+		if isDataCommand(command) {
+			var dataConnection net.Conn
 			for {
-				data, err = establishConnection("Data", SERVER_HOST, "8000")
+				dataConnection, err = establishConnection("Data", SERVER_HOST, "8000")
 				if err != nil {
 					continue
 				}
 				break
 			}
-			_, err := data.Write([]byte(fmt.Sprintf("<insert %s data here>", command)))
+
+			// --------- Handle Instructions Here-----------
+			err := handleInstruction(command, dataConnection)
 			if err != nil {
-				fmt.Println("[Data] Error writing:", err.Error())
+				fmt.Println("[Data] Error executing instruction:", err.Error())
 				return
 			}
-			err = data.Close()
+
+			err = dataConnection.Close()
 			if err != nil {
 				fmt.Println("[Data] Error closing connection to server:", err.Error())
 				return
@@ -106,11 +111,65 @@ func establishConnection(connectionType, host string, port string) (net.Conn, er
 	return connection, err
 }
 
-func isDataCommand(commands []string, command string) bool {
-	for _, value := range commands {
-		if value == command {
-			return true
+func isDataCommand(command string) bool {
+	argsPattern := `^(RETR|STOR) ([a-zA-Z0-9\-_]+)(\.[a-z]+)?$`
+
+	if command == "LIST" {
+		return true
+	} else if matched, err := regexp.MatchString(argsPattern, command); err == nil && matched {
+		return true
+	}
+	fmt.Println(fmt.Sprintf("Error: Command '%s' requires an arguement specifying a filename", command))
+
+	return false
+}
+
+func handleInstruction(instruction string, dataConnection net.Conn) error {
+	if instruction == "LIST" {
+		// Build a string that contains all files in the current directory, send to client
+		data := ""
+		files, err := os.ReadDir(".")
+
+		if err != nil {
+			return err
+		}
+
+		for _, file := range files {
+			data += file.Name() + " "
+		}
+
+		_, err = dataConnection.Write([]byte(data))
+		if err != nil {
+			fmt.Println("[Data] Error writing:", err.Error())
+			return err
+		}
+	} else {
+		splitInstruction := strings.Split(instruction, " ")
+		command := splitInstruction[0]
+		filename := splitInstruction[1]
+
+		if command == "STOR" {
+			//	Receive a file from the client
+
+		} else if command == "RETR" {
+			// Send a file to the client
+
+			file, err := os.Open("./" + filename)
+			if err != nil {
+				fmt.Println(err)
+				return err
+			}
+			_, err = io.Copy(dataConnection, file)
+			if err != nil {
+				fmt.Println(err)
+				return err
+			}
+			err = file.Close()
+			if err != nil {
+				fmt.Println(err)
+				return err
+			}
 		}
 	}
-	return false
+	return nil
 }

@@ -25,10 +25,8 @@ const (
 
 func main() {
 	var (
-		command      string
-		dataCommands = []string{"LIST", "RETR", "STOR"}
-		pattern      = `^CONNECT ([a-zA-Z0-9\-\.]+:[0-9]+)$` // CONNECT localhost:8636
-		buffer       = make([]byte, 1024)
+		command        string
+		connectPattern = `^CONNECT ([a-zA-Z0-9\-\.]+:[0-9]+)$` // CONNECT localhost:8636
 	)
 
 	//establish connection
@@ -40,7 +38,7 @@ func main() {
 			command = scanner.Text()
 		}
 
-		if matched, err := regexp.MatchString(pattern, command); err == nil && matched {
+		if matched, err := regexp.MatchString(connectPattern, command); err == nil && matched {
 			splitCommand := strings.Split(command, " ")
 			hostAndPort := strings.Split(splitCommand[1], ":")
 			host := hostAndPort[0]
@@ -63,14 +61,14 @@ func main() {
 				}
 
 				// If client expects data, open the data port
-				if isDataCommand(dataCommands, command) {
+				if isDataCommand(command) {
 					fmt.Println("[Data] Port Running on " + SERVER_HOST + ":" + SERVER_PORT)
-
 					server, err := net.Listen(SERVER_TYPE, SERVER_HOST+":"+SERVER_PORT)
 					if err != nil {
 						fmt.Println("[Data] Error listening:", err.Error())
 						continue
 					}
+
 					_, err = control.Write([]byte(command))
 					if err != nil {
 						fmt.Println("[Control] Error writing:", err.Error())
@@ -83,13 +81,13 @@ func main() {
 						continue
 					}
 
-					dataLength, err := connection.Read(buffer)
-					if err != nil {
-						fmt.Println("[Data] Error reading from client:", err.Error())
-						continue
-					}
-					dataToString := string(buffer[:dataLength])
-					fmt.Println(dataToString)
+					//dataLength, err := connection.Read(buffer)
+					//if err != nil {
+					//	fmt.Println("[Data] Error reading from client:", err.Error())
+					//	continue
+					//}
+					//dataToString := string(buffer[:dataLength])
+					//fmt.Println(dataToString)
 
 					fmt.Println("[Data] Port Closing")
 					err = connection.Close()
@@ -134,15 +132,39 @@ func establishConnection(connectionType, host, port string) (net.Conn, error) {
 	} else {
 		fmt.Println(fmt.Sprintf("[%s] Connected to %s:%s", connectionType, host, port))
 	}
-
 	return connection, err
 }
 
-func isDataCommand(commands []string, command string) bool {
-	for _, value := range commands {
-		if value == command {
-			return true
+func isDataCommand(command string) bool {
+	argsPattern := `^(RETR|STOR) ([a-zA-Z0-9\-_]+)(\.[a-z]+)?$`
+
+	if command == "LIST" {
+		return true
+	} else if matched, err := regexp.MatchString(argsPattern, command); err == nil && matched {
+		return true
+	}
+	fmt.Println(fmt.Sprintf("Error: Command '%s' requires an arguement specifying a filename", command))
+
+	return false
+}
+
+func handleDataTransfer(instruction string, dataConnection net.Conn) error {
+	buffer := make([]byte, 1024)
+
+	if instruction == "LIST" {
+		//	Read from data, print contents to terminal
+	} else {
+		splitInstruction := strings.Split(instruction, " ")
+		command := splitInstruction[0]
+		filename := splitInstruction[1]
+
+		if command == "STOR" {
+			//	Send file to the server
+
+		} else if command == "RETR" {
+			//	Retrieve file from the server
+
 		}
 	}
-	return false
+	return nil
 }
