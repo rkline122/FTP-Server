@@ -80,26 +80,27 @@ func processClient(connection net.Conn) {
 		}
 		command := string(buffer[:messageLen])
 
-		if isDataCommand(command) {
-			dataConnection, err := net.Dial(SERVER_TYPE, SERVER_HOST+":"+DATA_SERVER_PORT)
-			if err != nil {
-				continue
-			}
-			fmt.Println(fmt.Sprintf("[Data] Connected to %s:%s", SERVER_HOST, DATA_SERVER_PORT))
+		if command != "QUIT" {
+			if isValidCommand(command) {
+				dataConnection, err := net.Dial(SERVER_TYPE, SERVER_HOST+":"+DATA_SERVER_PORT)
+				if err != nil {
+					continue
+				}
+				fmt.Println(fmt.Sprintf("[Data] Connected to %s:%s", SERVER_HOST, DATA_SERVER_PORT))
 
-			err = handleDataTransfer(command, dataConnection)
-			if err != nil {
-				fmt.Println("[Data] Error executing instruction:", err.Error())
-				return
-			}
+				err = handleDataTransfer(command, dataConnection)
+				if err != nil {
+					fmt.Println("[Data] Error executing instruction:", err.Error())
+					return
+				}
 
-			err = dataConnection.Close()
-			if err != nil {
-				fmt.Println("[Data] Error closing connection to server:", err.Error())
-				return
+				err = dataConnection.Close()
+				if err != nil {
+					fmt.Println("[Data] Error closing connection to server:", err.Error())
+					return
+				}
+				fmt.Println("[Data] Connection closed")
 			}
-			fmt.Println("[Data] Connection closed")
-
 		} else if command == "QUIT" {
 			err = connection.Close()
 			if err != nil {
@@ -112,20 +113,17 @@ func processClient(connection net.Conn) {
 	}
 }
 
-func isDataCommand(command string) bool {
+func isValidCommand(command string) bool {
 	/*
 		Returns true if a given command requires a data transfer and is formatted correctly.
 	*/
-	argsPattern := `^(RETR|STOR) ([a-zA-Z0-9\-_]+)(\.[a-z]+)?$`
+	dataPattern := `^(RETR|STOR) ([a-zA-Z0-9\-_]+)(\.[a-z]+)?$`
+	matched, err := regexp.MatchString(dataPattern, command)
 
-	if command == "LIST" {
+	if command == "LIST" || matched && err == nil {
 		return true
-	} else if matched, err := regexp.MatchString(argsPattern, command); err == nil && matched {
-		return true
-	} else if command == "QUIT" {
-		return false
 	}
-	fmt.Println(fmt.Sprintf("Error: Command '%s' requires an arguement specifying a filename", command))
+	fmt.Println("Invalid command or incorrect format. (Make sure to include the filename for STOR and RETR)")
 	return false
 }
 

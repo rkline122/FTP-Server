@@ -70,43 +70,45 @@ func main() {
 					command = scanner.Text()
 				}
 
-				// If client expects data, open the data port
-				if isDataCommand(command) {
-					fmt.Println("[Data] Port Running on " + SERVER_HOST + ":" + SERVER_PORT)
-					server, err := net.Listen(SERVER_TYPE, SERVER_HOST+":"+SERVER_PORT)
-					if err != nil {
-						fmt.Println("[Data] Error listening:", err.Error())
-						continue
-					}
+				if command != "QUIT" {
+					if isValidCommand(command) {
+						fmt.Println("[Data] Port Running on " + SERVER_HOST + ":" + SERVER_PORT)
+						server, err := net.Listen(SERVER_TYPE, SERVER_HOST+":"+SERVER_PORT)
+						if err != nil {
+							fmt.Println("[Data] Error listening:", err.Error())
+							continue
+						}
 
-					_, err = control.Write([]byte(command))
-					if err != nil {
-						fmt.Println("[Control] Error writing:", err.Error())
-						continue
-					}
+						_, err = control.Write([]byte(command))
+						if err != nil {
+							fmt.Println("[Control] Error writing:", err.Error())
+							continue
+						}
 
-					dataConnection, err := server.Accept()
-					if err != nil {
-						fmt.Println("[Data] Error accepting client:", err.Error())
-						continue
-					}
+						dataConnection, err := server.Accept()
+						if err != nil {
+							fmt.Println("[Data] Error accepting client:", err.Error())
+							continue
+						}
 
-					err = handleDataTransfer(command, dataConnection)
-					if err != nil {
-						fmt.Println("[Data] Error in data transfer:", err.Error())
-						continue
-					}
+						err = handleDataTransfer(command, dataConnection)
+						if err != nil {
+							fmt.Println("[Data] Error in data transfer:", err.Error())
+							continue
+						}
 
-					fmt.Println("[Data] Port Closing")
-					err = dataConnection.Close()
-					if err != nil {
-						fmt.Println("[Data] Error closing dataConnection to client:", err.Error())
-						continue
-					}
-					err = server.Close()
-					if err != nil {
-						fmt.Println("[Data] Error closing server:", err.Error())
-						continue
+						fmt.Println("[Data] Port Closing")
+						err = dataConnection.Close()
+						if err != nil {
+							fmt.Println("[Data] Error closing dataConnection to client:", err.Error())
+							continue
+						}
+
+						err = server.Close()
+						if err != nil {
+							fmt.Println("[Data] Error closing server:", err.Error())
+							continue
+						}
 					}
 				} else if command == "QUIT" {
 					_, err := control.Write([]byte(command))
@@ -133,20 +135,17 @@ func main() {
 	}
 }
 
-func isDataCommand(command string) bool {
+func isValidCommand(command string) bool {
 	/*
-		Returns true if a given command requires a data transfer and is formatted correctly.
+		Returns true if a given command is valid.
 	*/
 	dataPattern := `^(RETR|STOR) ([a-zA-Z0-9\-_]+)(\.[a-z]+)?$`
+	matched, err := regexp.MatchString(dataPattern, command)
 
-	if command == "LIST" {
+	if command == "LIST" || matched && err == nil {
 		return true
-	} else if matched, err := regexp.MatchString(dataPattern, command); err == nil && matched {
-		return true
-	} else if command == "QUIT" {
-		return false
 	}
-	fmt.Println(fmt.Sprintf("Error: Command '%s' requires an argument specifying a filename", command))
+	fmt.Println("Invalid command or incorrect format. (Make sure to include the filename for STOR and RETR)")
 	return false
 }
 
@@ -187,7 +186,6 @@ func handleDataTransfer(instruction string, dataConnection net.Conn) error {
 				fmt.Println(err)
 				return err
 			}
-
 		} else if command == "RETR" {
 			//	Retrieve file from the server
 			file, err := os.Create(filename)
