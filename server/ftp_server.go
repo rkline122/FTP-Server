@@ -1,3 +1,11 @@
+/*
+Project 2: FTP Server
+By Ryan Kline
+		---
+CIS 457 - Data Communications
+Winter 2023
+*/
+
 package main
 
 import (
@@ -10,9 +18,10 @@ import (
 )
 
 const (
-	SERVER_HOST = "localhost"
-	SERVER_PORT = "8636"
-	SERVER_TYPE = "tcp"
+	SERVER_HOST      = "localhost"
+	SERVER_PORT      = "8636"
+	DATA_SERVER_PORT = "8000"
+	SERVER_TYPE      = "tcp"
 )
 
 func main() {
@@ -23,7 +32,6 @@ func main() {
 	*/
 	fmt.Println("Server Running...")
 	server, err := net.Listen(SERVER_TYPE, SERVER_HOST+":"+SERVER_PORT)
-
 	if err != nil {
 		fmt.Println("Error listening:", err.Error())
 		os.Exit(1)
@@ -52,6 +60,12 @@ func main() {
 }
 
 func processClient(connection net.Conn) {
+	/*
+		Listens for commands sent from the client. If a command requires a data transfer, the server connects to
+		the data line hosted by the client before calling the handleDataTransfer() function that takes appropriate actions
+		based on the instruction received. Once the transfer is complete, it closes its end of the data line and waits
+		for a new instruction from the client. This process continues until "QUIT" is received from the client.
+	*/
 
 	var (
 		buffer = make([]byte, 1024)
@@ -67,17 +81,13 @@ func processClient(connection net.Conn) {
 		command := string(buffer[:messageLen])
 
 		if isDataCommand(command) {
-			var dataConnection net.Conn
-			for {
-				dataConnection, err = establishConnection("Data", SERVER_HOST, "8000")
-				if err != nil {
-					continue
-				}
-				break
+			dataConnection, err := net.Dial(SERVER_TYPE, SERVER_HOST+":"+DATA_SERVER_PORT)
+			if err != nil {
+				continue
 			}
+			fmt.Println(fmt.Sprintf("[Data] Connected to %s:%s", SERVER_HOST, DATA_SERVER_PORT))
 
-			// --------- Handle Instructions Here-----------
-			err := handleInstruction(command, dataConnection)
+			err = handleDataTransfer(command, dataConnection)
 			if err != nil {
 				fmt.Println("[Data] Error executing instruction:", err.Error())
 				return
@@ -89,6 +99,7 @@ func processClient(connection net.Conn) {
 				return
 			}
 			fmt.Println("[Data] Connection closed")
+
 		} else if command == "QUIT" {
 			err = connection.Close()
 			if err != nil {
@@ -101,30 +112,27 @@ func processClient(connection net.Conn) {
 	}
 }
 
-func establishConnection(connectionType, host string, port string) (net.Conn, error) {
-	connection, err := net.Dial(SERVER_TYPE, host+":"+port)
-	if err != nil {
-		fmt.Println(err)
-	} else {
-		fmt.Println(fmt.Sprintf("[%s] Connected to %s:%s", connectionType, host, port))
-	}
-	return connection, err
-}
-
 func isDataCommand(command string) bool {
+	/*
+		Returns true if a given command requires a data transfer and is formatted correctly.
+	*/
 	argsPattern := `^(RETR|STOR) ([a-zA-Z0-9\-_]+)(\.[a-z]+)?$`
 
 	if command == "LIST" {
 		return true
 	} else if matched, err := regexp.MatchString(argsPattern, command); err == nil && matched {
 		return true
+	} else if command == "QUIT" {
+		return false
 	}
 	fmt.Println(fmt.Sprintf("Error: Command '%s' requires an arguement specifying a filename", command))
-
 	return false
 }
 
-func handleInstruction(instruction string, dataConnection net.Conn) error {
+func handleDataTransfer(instruction string, dataConnection net.Conn) error {
+	/*
+		Executes appropriate actions based on the command passed. Returns any potential errors.
+	*/
 	if instruction == "LIST" {
 		// Build a string that contains all files in the current directory, send to client
 		data := ""
@@ -150,10 +158,23 @@ func handleInstruction(instruction string, dataConnection net.Conn) error {
 
 		if command == "STOR" {
 			//	Receive a file from the client
-
+			file, err := os.Create(filename)
+			if err != nil {
+				fmt.Println("Error creating file:", err.Error())
+				return err
+			}
+			_, err = io.Copy(file, dataConnection)
+			if err != nil {
+				fmt.Println("Error copying data: ", err.Error())
+				return err
+			}
+			err = file.Close()
+			if err != nil {
+				fmt.Println("Error closing file: ", err.Error())
+				return err
+			}
 		} else if command == "RETR" {
 			// Send a file to the client
-
 			file, err := os.Open("./" + filename)
 			if err != nil {
 				fmt.Println(err)

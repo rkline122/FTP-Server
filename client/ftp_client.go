@@ -1,16 +1,17 @@
-// The client program presents a command line interface that allows a user to:
-//
-//    Connect to a server
-//    List files located at the server.
-//    Get (retrieve) a file from the server.
-//    Send (put) a file from the client to the server.
-//    Terminate the connection to the server.
+/*
+Project 2: FTP Server
+By Ryan Kline
+		---
+CIS 457 - Data Communications
+Winter 2023
+*/
 
 package main
 
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"regexp"
@@ -24,12 +25,20 @@ const (
 )
 
 func main() {
+	/*
+		Prompts user to connect to the server using the command 'CONNECT <server name/IP address>:<port>'.
+
+		Upon successful connection, the user is able to send commands to the server. If a command requires a
+		data transfer, a server is started on the client to act as the data connection. Once the FTP server has
+		been connected to the data line, the handleDataTransfer() function is called and runs the appropriate logic
+		based on the command sent. When the transfer is complete, the data connection is closed and the user is
+		prompted to send another command. This loop continues until the client sends the "QUIT" command.
+	*/
 	var (
 		command        string
 		connectPattern = `^CONNECT ([a-zA-Z0-9\-\.]+:[0-9]+)$` // CONNECT localhost:8636
 	)
 
-	//establish connection
 	for {
 		fmt.Println("Connect to a server:")
 		scanner := bufio.NewScanner(os.Stdin)
@@ -44,11 +53,12 @@ func main() {
 			host := hostAndPort[0]
 			port := hostAndPort[1]
 
-			//Control Connection
-			control, err := establishConnection("Control", host, port)
+			// Control Connection
+			control, err := net.Dial(SERVER_TYPE, host+":"+port)
 			if err != nil {
-				// Error message prints in establishConnection function
-				continue
+				fmt.Println(err)
+			} else {
+				fmt.Println(fmt.Sprintf("[Control] Connected to %s:%s", host, port))
 			}
 
 			// Interact with the server via commands
@@ -75,24 +85,22 @@ func main() {
 						continue
 					}
 
-					connection, err := server.Accept()
+					dataConnection, err := server.Accept()
 					if err != nil {
 						fmt.Println("[Data] Error accepting client:", err.Error())
 						continue
 					}
 
-					//dataLength, err := connection.Read(buffer)
-					//if err != nil {
-					//	fmt.Println("[Data] Error reading from client:", err.Error())
-					//	continue
-					//}
-					//dataToString := string(buffer[:dataLength])
-					//fmt.Println(dataToString)
+					err = handleDataTransfer(command, dataConnection)
+					if err != nil {
+						fmt.Println("[Data] Error in data transfer:", err.Error())
+						continue
+					}
 
 					fmt.Println("[Data] Port Closing")
-					err = connection.Close()
+					err = dataConnection.Close()
 					if err != nil {
-						fmt.Println("[Data] Error closing connection to client:", err.Error())
+						fmt.Println("[Data] Error closing dataConnection to client:", err.Error())
 						continue
 					}
 					err = server.Close()
@@ -101,7 +109,7 @@ func main() {
 						continue
 					}
 				} else if command == "QUIT" {
-					_, err := control.Write([]byte("QUIT"))
+					_, err := control.Write([]byte(command))
 					if err != nil {
 						fmt.Println("[Control] Error writing:", err.Error())
 						os.Exit(1)
@@ -116,8 +124,8 @@ func main() {
 				fmt.Println("[Control] Error closing connection to server:", err.Error())
 				os.Exit(1)
 			}
-		} else if command == "QUIT" {
-			break
+		} else if command == "exit" {
+			os.Exit(0)
 		} else {
 			fmt.Println("Invalid Command. Use `CONNECT <server name/IP address> <server port>` to connect to " +
 				"a server")
@@ -125,34 +133,38 @@ func main() {
 	}
 }
 
-func establishConnection(connectionType, host, port string) (net.Conn, error) {
-	connection, err := net.Dial(SERVER_TYPE, host+":"+port)
-	if err != nil {
-		fmt.Println(err)
-	} else {
-		fmt.Println(fmt.Sprintf("[%s] Connected to %s:%s", connectionType, host, port))
-	}
-	return connection, err
-}
-
 func isDataCommand(command string) bool {
-	argsPattern := `^(RETR|STOR) ([a-zA-Z0-9\-_]+)(\.[a-z]+)?$`
+	/*
+		Returns true if a given command requires a data transfer and is formatted correctly.
+	*/
+	dataPattern := `^(RETR|STOR) ([a-zA-Z0-9\-_]+)(\.[a-z]+)?$`
 
 	if command == "LIST" {
 		return true
-	} else if matched, err := regexp.MatchString(argsPattern, command); err == nil && matched {
+	} else if matched, err := regexp.MatchString(dataPattern, command); err == nil && matched {
 		return true
+	} else if command == "QUIT" {
+		return false
 	}
-	fmt.Println(fmt.Sprintf("Error: Command '%s' requires an arguement specifying a filename", command))
-
+	fmt.Println(fmt.Sprintf("Error: Command '%s' requires an argument specifying a filename", command))
 	return false
 }
 
 func handleDataTransfer(instruction string, dataConnection net.Conn) error {
+	/*
+		Executes appropriate actions based on the command passed. Returns any potential errors.
+	*/
 	buffer := make([]byte, 1024)
 
 	if instruction == "LIST" {
 		//	Read from data, print contents to terminal
+		dataLength, err := dataConnection.Read(buffer)
+		if err != nil {
+			fmt.Println("[Data] Error reading from client:", err.Error())
+			return err
+		}
+		dataToString := string(buffer[:dataLength])
+		fmt.Println(dataToString)
 	} else {
 		splitInstruction := strings.Split(instruction, " ")
 		command := splitInstruction[0]
@@ -160,10 +172,39 @@ func handleDataTransfer(instruction string, dataConnection net.Conn) error {
 
 		if command == "STOR" {
 			//	Send file to the server
+			file, err := os.Open("./" + filename)
+			if err != nil {
+				fmt.Println(err)
+				return err
+			}
+			_, err = io.Copy(dataConnection, file)
+			if err != nil {
+				fmt.Println(err)
+				return err
+			}
+			err = file.Close()
+			if err != nil {
+				fmt.Println(err)
+				return err
+			}
 
 		} else if command == "RETR" {
 			//	Retrieve file from the server
-
+			file, err := os.Create(filename)
+			if err != nil {
+				fmt.Println("Error creating file:", err.Error())
+				return err
+			}
+			_, err = io.Copy(file, dataConnection)
+			if err != nil {
+				fmt.Println("Error copying data: ", err.Error())
+				return err
+			}
+			err = file.Close()
+			if err != nil {
+				fmt.Println("Error closing file: ", err.Error())
+				return err
+			}
 		}
 	}
 	return nil
