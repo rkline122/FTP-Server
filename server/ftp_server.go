@@ -84,7 +84,7 @@ func processClient(connection net.Conn) {
 			if isValidCommand(command) {
 				dataConnection, err := net.Dial(SERVER_TYPE, SERVER_HOST+":"+DATA_SERVER_PORT)
 				if err != nil {
-					continue
+					return
 				}
 				fmt.Println(fmt.Sprintf("[Data] Connected to %s:%s", SERVER_HOST, DATA_SERVER_PORT))
 

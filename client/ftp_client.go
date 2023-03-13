@@ -36,7 +36,7 @@ func main() {
 	*/
 	var (
 		command        string
-		connectPattern = `^CONNECT ([a-zA-Z0-9\-\.]+:[0-9]+)$` // CONNECT localhost:8636
+		connectPattern = `^CONNECT ([a-zA-Z0-9\-\.]+:[0-9]+)$`
 	)
 
 	for {
@@ -76,45 +76,45 @@ func main() {
 						server, err := net.Listen(SERVER_TYPE, SERVER_HOST+":"+SERVER_PORT)
 						if err != nil {
 							fmt.Println("[Data] Error listening:", err.Error())
-							continue
+							return
 						}
 
 						_, err = control.Write([]byte(command))
 						if err != nil {
 							fmt.Println("[Control] Error writing:", err.Error())
-							continue
+							return
 						}
 
 						dataConnection, err := server.Accept()
 						if err != nil {
 							fmt.Println("[Data] Error accepting client:", err.Error())
-							continue
+							return
 						}
 
 						err = handleDataTransfer(command, dataConnection)
 						if err != nil {
 							fmt.Println("[Data] Error in data transfer:", err.Error())
-							continue
+							return
 						}
 
 						fmt.Println("[Data] Port Closing")
 						err = dataConnection.Close()
 						if err != nil {
 							fmt.Println("[Data] Error closing dataConnection to client:", err.Error())
-							continue
+							return
 						}
 
 						err = server.Close()
 						if err != nil {
 							fmt.Println("[Data] Error closing server:", err.Error())
-							continue
+							return
 						}
 					}
 				} else if command == "QUIT" {
 					_, err := control.Write([]byte(command))
 					if err != nil {
 						fmt.Println("[Control] Error writing:", err.Error())
-						os.Exit(1)
+						return
 					}
 					break
 				} else {
@@ -124,7 +124,7 @@ func main() {
 			err = control.Close()
 			if err != nil {
 				fmt.Println("[Control] Error closing connection to server:", err.Error())
-				os.Exit(1)
+				return
 			}
 		} else if command == "exit" {
 			os.Exit(0)
