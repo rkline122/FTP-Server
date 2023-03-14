@@ -18,10 +18,9 @@ import (
 )
 
 const (
-	SERVER_HOST      = "localhost"
-	SERVER_PORT      = "8636"
-	DATA_SERVER_PORT = "8000"
-	SERVER_TYPE      = "tcp"
+	SERVER_HOST = "localhost"
+	SERVER_PORT = "8636"
+	SERVER_TYPE = "tcp"
 )
 
 func main() {
@@ -68,8 +67,21 @@ func processClient(connection net.Conn) {
 	*/
 
 	var (
-		buffer = make([]byte, 1024)
+		buffer   = make([]byte, 1024)
+		dataHost string
+		dataPort string
 	)
+
+	// Receives and stores host and port number for data connection
+	messageLen, err := connection.Read(buffer)
+	if err != nil {
+		fmt.Println("[Control] Error reading:", err.Error())
+		return
+	}
+	bufferToString := string(buffer[:messageLen])
+	dataHostAndPort := strings.Split(bufferToString, ":")
+	dataHost = dataHostAndPort[0]
+	dataPort = dataHostAndPort[1]
 
 	for {
 		// Reads and deconstructs client message
@@ -82,11 +94,11 @@ func processClient(connection net.Conn) {
 
 		if command != "QUIT" {
 			if isValidCommand(command) {
-				dataConnection, err := net.Dial(SERVER_TYPE, SERVER_HOST+":"+DATA_SERVER_PORT)
+				dataConnection, err := net.Dial(SERVER_TYPE, dataHost+":"+dataPort)
 				if err != nil {
 					return
 				}
-				fmt.Println(fmt.Sprintf("[Data] Connected to %s:%s", SERVER_HOST, DATA_SERVER_PORT))
+				fmt.Println(fmt.Sprintf("[Data] Connected to %s:%s", dataHost, dataPort))
 
 				err = handleDataTransfer(command, dataConnection)
 				if err != nil {

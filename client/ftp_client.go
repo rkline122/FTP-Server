@@ -61,6 +61,13 @@ func main() {
 				fmt.Println(fmt.Sprintf("[Control] Connected to %s:%s", host, port))
 			}
 
+			// Send Host/Port info for data connection
+			_, err = control.Write([]byte(SERVER_HOST + ":" + SERVER_PORT))
+			if err != nil {
+				fmt.Println("Unable to write to server:", err.Error())
+				return
+			}
+
 			// Interact with the server via commands
 			for {
 				scanner := bufio.NewScanner(os.Stdin)
